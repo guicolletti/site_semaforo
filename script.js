@@ -1,5 +1,4 @@
-// app.js - Controle MQTT / UI
-// Requisitos: mqtt.min.js carregado no HTML.
+// app.js - Sincronização estrita com ESP via MQTT
 
 const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
@@ -29,6 +28,7 @@ const lights = {
 
 let client = null;
 let isConnected = false;
+let lastStatusReceivedAt = 0;
 
 // helpers
 function log(msg){
@@ -47,65 +47,45 @@ function setConn(connected){
   stopBtn.disabled = !connected;
 }
 
-// ui: atualiza as luzes
-function updateLights(state, active){
-  // remove classes
+// update UI from authoritative status
+function updateLightsFromState(state, active){
   Object.values(lights).forEach(el => el.classList.remove('on'));
-  if(!state) {
-    stateLabel.innerText = '—';
-    activeLabel.innerText = active ? 'Sim' : 'Não';
-    return;
-  }
-
-  stateLabel.innerText = state;
+  stateLabel.innerText = state || '—';
   activeLabel.innerText = active ? 'Sim' : 'Não';
-
-  // map state names (flexível)
+  if(!state) return;
   const s = state.toLowerCase();
   if(s.includes('verde') && s.includes('carro') || s === 'carro_verde' || s === 'verde'){
-    lights.carGreen.classList.add('on');
-    lights.pedRed.classList.add('on');
+    lights.carGreen.classList.add('on'); lights.pedRed.classList.add('on');
   } else if(s.includes('amarelo') || s === 'carro_amarelo'){
-    lights.carYellow.classList.add('on');
-    lights.pedRed.classList.add('on');
+    lights.carYellow.classList.add('on'); lights.pedRed.classList.add('on');
   } else if(s.includes('vermelho') || s === 'carro_vermelho'){
-    lights.carRed.classList.add('on');
-    lights.pedGreen.classList.add('on');
-  } else if(s === 'desligado' || s === 'parado'){
-    // nothing
+    lights.carRed.classList.add('on'); lights.pedGreen.classList.add('on');
   } else {
-    // try parse simple tokens "verde/amarelo/vermelho"
-    if(s === 'verde'){
-      lights.carGreen.classList.add('on'); lights.pedRed.classList.add('on');
-    } else if(s === 'amarelo'){
-      lights.carYellow.classList.add('on'); lights.pedRed.classList.add('on');
-    } else if(s === 'vermelho'){
-      lights.carRed.classList.add('on'); lights.pedGreen.classList.add('on');
-    }
+    // fallback simples
+    if(s === 'verde'){ lights.carGreen.classList.add('on'); lights.pedRed.classList.add('on'); }
+    if(s === 'amarelo'){ lights.carYellow.classList.add('on'); lights.pedRed.classList.add('on'); }
+    if(s === 'vermelho'){ lights.carRed.classList.add('on'); lights.pedGreen.classList.add('on'); }
   }
+  lastStatusReceivedAt = Date.now();
 }
 
-// receber status (JSON esperado)
+// handle incoming status payload (JSON expected)
 function handleStatusMessage(message){
-  let parsed;
   try {
-    parsed = JSON.parse(message);
-  } catch (e) {
-    log(`Status recebido (não JSON): ${message}`);
+    const parsed = JSON.parse(message);
+    lastMsg.innerText = JSON.stringify(parsed, null, 2);
+    lastAt.innerText = new Date().toLocaleString();
+    updateLightsFromState(parsed.state, !!parsed.active);
+    log(`Status recebido -> active:${parsed.active} state:${parsed.state}`);
+  } catch(e){
+    // se não for JSON, só exibe
     lastMsg.innerText = message;
     lastAt.innerText = new Date().toLocaleString();
-    return;
+    log('Status recebido (não JSON): ' + message);
   }
-
-  const active = !!parsed.active;
-  const state = parsed.state || null;
-  lastMsg.innerText = JSON.stringify(parsed, null, 2);
-  lastAt.innerText = new Date().toLocaleString();
-  updateLights(state, active);
-  log(`Status -> active:${active} state:${state}`);
 }
 
-// conectar
+// connect
 function connectMQTT(){
   const broker = brokerInput.value.trim();
   let clientId = clientIdInput.value.trim();
@@ -118,24 +98,25 @@ function connectMQTT(){
     return;
   }
 
-  log(`Conectando ao broker ${broker} (clientId=${clientId})...`);
+  log(`Conectando ao broker ${broker}...`);
   client.on('connect', () => {
     setConn(true);
     const st = topicStatus.value.trim();
-    if(st) client.subscribe(st, {qos:0}, (err) => {
+    // subscribe ao tópico de status
+    client.subscribe(st, {qos:0}, (err) => {
       if(err) log('Erro subscribe: ' + err);
-      else log('Inscrito em ' + st);
+      else {
+        log('Inscrito em ' + st);
+        // solicitar status atual (redundante se retained estiver ativo)
+        client.publish('semaforo/get', 'GET');
+      }
     });
-    log('Conectado com sucesso');
+    log('Conectado');
   });
 
-  client.on('reconnect', () => {
-    log('Reconectando...');
-  });
-
-  client.on('error', (e) => {
-    log('Erro MQTT: ' + e);
-  });
+  client.on('reconnect', () => { log('Reconectando...'); });
+  client.on('error', (e) => { log('Erro MQTT: ' + e); });
+  client.on('close', () => { setConn(false); log('Conexão fechada'); updateLightsFromState(null,false); });
 
   client.on('message', (topic, payload) => {
     const txt = payload.toString();
@@ -145,14 +126,9 @@ function connectMQTT(){
       log(`Mensagem em ${topic}: ${txt}`);
     }
   });
-
-  client.on('close', () => {
-    setConn(false);
-    log('Conexão fechada');
-  });
 }
 
-// desconectar
+// disconnect
 function disconnectMQTT(){
   if(client){
     try { client.end(); } catch(e){ console.warn(e); }
@@ -160,38 +136,39 @@ function disconnectMQTT(){
   }
   setConn(false);
   log('Desconectado manualmente');
-  updateLights(null, false);
+  updateLightsFromState(null,false);
 }
 
-// publicar comando
+// publish command (INICIAR/PARAR)
 function publishCmd(cmd){
-  if(!client || !isConnected){
-    log('Não conectado. Conecte ao broker antes de enviar comandos.');
-    return;
-  }
+  if(!client || !isConnected){ log('Não conectado'); return; }
   const topic = topicCmd.value.trim();
-  if(!topic){ log('Tópico de comando vazio'); return; }
+  if(!topic){ log('Tópico vazio'); return; }
   client.publish(topic, cmd, {qos:0}, (err) => {
     if(err) log('Erro publicar: ' + err);
     else log(`Publicado em ${topic}: ${cmd}`);
+    // NÃO fazer atualização otimista; aguardamos mensagem em semaforo/status
   });
 }
 
-// eventos UI
+// UI events
 connectBtn.addEventListener('click', () => connectMQTT());
 disconnectBtn.addEventListener('click', () => disconnectMQTT());
+startBtn.addEventListener('click', () => publishCmd('INICIAR'));
+stopBtn.addEventListener('click', () => publishCmd('PARAR'));
 
-startBtn.addEventListener('click', () => {
-  publishCmd('INICIAR');
-  // otimista: atualiza UI imediatamente
-  updateLights('verde', true);
-});
+// periodic check: se não receber status há > X segundos, mostra "offline"
+setInterval(() => {
+  if(isConnected && lastStatusReceivedAt){
+    const ago = Date.now() - lastStatusReceivedAt;
+    if(ago > 10000){ // 10s sem status
+      log('Atenção: sem atualização de status nos últimos 10s');
+      // não limpa as luzes, mas marca texto
+      stateLabel.innerText = stateLabel.innerText + ' (sem atualização)';
+    }
+  }
+}, 5000);
 
-stopBtn.addEventListener('click', () => {
-  publishCmd('PARAR');
-  updateLights(null, false);
-});
-
-// habilita/disabilita botões conforme conexão inicial (desconectado)
+// inicial
 setConn(false);
-log('Painel inicializado. Configure o broker e clique em Conectar.');
+log('Painel inicializado. Conecte ao broker para sincronizar com o ESP.');

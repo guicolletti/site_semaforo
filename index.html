@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Controle do Semáforo</title>
+</head>
+<body>
+  <h1>Semáforo ESP32</h1>
+  <button onclick="iniciar()">Iniciar Semáforo</button>
+  <button onclick="parar()">Parar Semáforo</button>
+
+  <script>
+    const ipESP = "http://192.168.18.110";
+
+    function iniciar() {
+      fetch(ipESP + "/iniciar")
+        .then(response => response.text())
+        .then(data => alert(data))
+        .catch(err => alert("Erro: " + err));
+    }
+
+    function parar() {
+      fetch(ipESP + "/parar")
+        .then(response => response.text())
+        .then(data => alert(data))
+        .catch(err => alert("Erro: " + err));
+    }
+  </script>
+</body>
+</html>

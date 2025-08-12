@@ -1,28 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Controle do Semáforo</title>
+  <meta charset="UTF-8">
+  <title>Controle Semáforo</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
-  <h1>Semáforo ESP32</h1>
-  <button onclick="iniciar()">Iniciar Semáforo</button>
-  <button onclick="parar()">Parar Semáforo</button>
+  <h1>Controle do Semáforo</h1>
+  <button onclick="iniciar()">Iniciar</button>
+  <button onclick="parar()">Parar</button>
+  <p>Status: <span id="status">Desconhecido</span></p>
 
   <script>
-    const ipESP = "http://192.168.18.110";
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+
+    client.on("connect", function () {
+      console.log("Conectado ao broker MQTT");
+      client.subscribe("semaforo/status");
+    });
+
+    client.on("message", function (topic, message) {
+      if (topic === "semaforo/status") {
+        const data = JSON.parse(message.toString());
+        document.getElementById("status").textContent =
+          data.active ? "Ligado - " + data.state : "Desligado";
+      }
+    });
 
     function iniciar() {
-      fetch(ipESP + "/iniciar")
-        .then(response => response.text())
-        .then(data => alert(data))
-        .catch(err => alert("Erro: " + err));
+      client.publish("semaforo/cmd", "INICIAR");
     }
 
     function parar() {
-      fetch(ipESP + "/parar")
-        .then(response => response.text())
-        .then(data => alert(data))
-        .catch(err => alert("Erro: " + err));
+      client.publish("semaforo/cmd", "PARAR");
     }
   </script>
 </body>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Painel - Semáforo MQTT (ESP32)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <!-- mqtt.js -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🚦</div>
+        <div>
+          <h1>Semáforo MQTT</h1>
+          <p class="muted">ESP32 · Controle em tempo real</p>
+        </div>
+      </div>
+      <div class="connection-info">
+        <div id="connDot" class="dot offline" title="Status da conexão"></div>
+        <div id="connText" class="muted">Desconectado</div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- Left: visual do semáforo -->
+      <section class="panel visual" aria-label="Visual do semáforo">
+        <div class="traffic large" role="img" aria-label="Semáforo veículos">
+          <div id="car-red" class="light red" aria-hidden="true"></div>
+          <div id="car-yellow" class="light yellow" aria-hidden="true"></div>
+          <div id="car-green" class="light green" aria-hidden="true"></div>
+        </div>
+
+        <div class="traffic small" role="img" aria-label="Semáforo pedestre">
+          <div id="ped-red" class="light small red" aria-hidden="true"></div>
+          <div id="ped-green" class="light small green" aria-hidden="true"></div>
+        </div>
+
+        <div class="state-labels">
+          <div><strong>Estado:</strong> <span id="stateLabel">—</span></div>
+          <div><strong>Ativo:</strong> <span id="activeLabel">—</span></div>
+        </div>
+      </section>
+
+      <!-- Right: controles e configurações -->
+      <section class="panel control" aria-label="Controles e configurações">
+        <h2>Conexão MQTT</h2>
+        <form id="connForm" onsubmit="return false;" class="form">
+          <label>
+            Broker (WebSocket)
+            <input id="brokerInput" type="text" value="wss://broker.hivemq.com:8884/mqtt" />
+          </label>
+
+          <label>
+            Client ID
+            <input id="clientIdInput" type="text" placeholder="Deixe em branco para gerar" />
+          </label>
+
+          <div class="row">
+            <button id="connectBtn" class="btn btn-primary">Conectar</button>
+            <button id="disconnectBtn" class="btn btn-ghost" disabled>Desconectar</button>
+          </div>
+        </form>
+
+        <hr />
+
+        <h2>Controles</h2>
+        <div class="row">
+          <button id="startBtn" class="btn btn-start" disabled>INICIAR</button>
+          <button id="stopBtn" class="btn btn-stop" disabled>PARAR</button>
+        </div>
+
+        <div class="pub-controls">
+          <label>
+            Tópico de comando
+            <input id="topicCmd" type="text" value="semaforo/cmd" />
+          </label>
+          <label>
+            Tópico status (assinatura)
+            <input id="topicStatus" type="text" value="semaforo/status" />
+          </label>
+        </div>
+
+        <hr />
+
+        <h2>Status</h2>
+        <div class="statusBox">
+          <div><strong>Última mensagem:</strong></div>
+          <pre id="lastMsg">—</pre>
+          <div class="small muted">Última atualização: <span id="lastAt">—</span></div>
+        </div>
+
+        <h3>Log</h3>
+        <div id="log" class="log" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <small>Desenvolvido para integração ESP32 + MQTT · Teste com broker público para protótipo</small>
+    </footer>
+  </div>
+
+  <script src="/script.js" defer></script>
+</body>
+</html>
